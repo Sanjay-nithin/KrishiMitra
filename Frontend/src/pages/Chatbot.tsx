@@ -28,7 +28,7 @@ const Chatbot = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   // Prefer '/api' proxy in dev; allow override via VITE_API_BASE_URL for direct calls
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
+  const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
   // Light formatter: ensures headings and list markers render well if Groq returns plain text
   const normalizeToMarkdown = (text: string): string => {
