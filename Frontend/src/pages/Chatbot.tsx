@@ -24,7 +24,9 @@ const Chatbot = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      content: 'Hello! I\'m Krishi Mitra, your AI farming assistant. How can I help you today? You can ask me about crops, weather, pest control, or any farming-related questions.',
+      content: 'ഹലോ! ഞാൻ കൃഷി മിത്ര, നിങ്ങളുടെ AI ഫാമിംഗ് അസിസ്റ്റന്റ്. ഇന്ന് എനിക്ക് നിങ്ങളെ എങ്ങനെ സഹായിക്കാനാകും? വിളകൾ, കാലാവസ്ഥ, കീട നിയന്ത്രണം അല്ലെങ്കിൽ കൃഷിയുമായി ബന്ധപ്പെട്ട എന്തെങ്കിലും ചോദ്യങ്ങൾ എന്നിവയെക്കുറിച്ച് നിങ്ങൾക്ക് എന്നോട് ചോദിക്കാം.',
+      content_ml: 'ഹലോ! ഞാൻ കൃഷി മിത്ര, നിങ്ങളുടെ AI ഫാമിംഗ് അസിസ്റ്റന്റ്. ഇന്ന് എനിക്ക് നിങ്ങളെ എങ്ങനെ സഹായിക്കാനാകും? വിളകൾ, കാലാവസ്ഥ, കീട നിയന്ത്രണം അല്ലെങ്കിൽ കൃഷിയുമായി ബന്ധപ്പെട്ട എന്തെങ്കിലും ചോദ്യങ്ങൾ എന്നിവയെക്കുറിച്ച് നിങ്ങൾക്ക് എന്നോട് ചോദിക്കാം.',
+      content_en: "Hello! I'm Krishi Mitra, your AI farming assistant. How can I help you today? You can ask me about crops, weather, pest control, or any farming-related questions.",
       sender: 'bot',
       timestamp: new Date(),
       type: 'text'
@@ -33,7 +35,7 @@ const Chatbot = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   // Prefer '/api' proxy in dev; allow override via VITE_API_BASE_URL for direct calls
-  const API_BASE = import.meta.env.VITE_API_BASE_URL;
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -60,30 +62,25 @@ const Chatbot = () => {
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
-    // Malayalam and English prompt for user message
-    const mlPrompt = "തക്കാളി നടാൻ ഏറ്റവും നല്ല സമയം ഏതാണ്?";
-    const enPrompt = "What is the best time to grow tomatoes?";
-
-    // Show Malayalam as main, English in dropdown
+    // Show actual user input as main; no translation dropdown for user text
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: mlPrompt,
-      content_ml: mlPrompt,
-      content_en: enPrompt,
+      content: inputMessage,
       sender: 'user',
       timestamp: new Date(),
       type: 'text',
-      showTranslation: false,
     };
 
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsTyping(true);
     try {
-      const reply = await generateBotResponse(inputMessage);
+      const data = await generateBotResponse(inputMessage);
       const botResponse: Message = {
         id: (Date.now() + 1).toString(),
-        content: reply,
+        content: data.reply_ml ?? data.reply ?? '',
+        content_ml: data.reply_ml,
+        content_en: data.reply_en,
         sender: 'bot',
         timestamp: new Date(),
         type: 'text',
@@ -103,7 +100,7 @@ const Chatbot = () => {
     }
   };
 
-  const generateBotResponse = async (userInput: string): Promise<string> => {
+  const generateBotResponse = async (userInput: string): Promise<{ reply_ml?: string; reply_en?: string; reply?: string; }> => {
     // Call backend FastAPI endpoint which proxies to Groq
     const res = await fetch(`${API_BASE}/chat`, {
       method: 'POST',
@@ -118,8 +115,8 @@ const Chatbot = () => {
       throw new Error(`Backend error ${res.status}: ${text}`);
     }
 
-    const data = await res.json();
-    return data.reply ?? 'I could not generate a response.';
+  const data = await res.json();
+  return data;
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

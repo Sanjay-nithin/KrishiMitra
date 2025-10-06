@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi import File, UploadFile, Form
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 
@@ -47,7 +48,8 @@ class ChatRequest(BaseModel):
     message: str
 
 class ChatResponse(BaseModel):
-    reply: str
+    reply_ml: str
+    reply_en: str
 
 
 class VoiceDemoResponse(BaseModel):
@@ -72,8 +74,14 @@ async def chat_endpoint(payload: ChatRequest):
 
     # Simple topic filter: only allow agricultural queries; warn otherwise
     def is_agriculture_query(text: str) -> bool:
-        t = text.lower()
-        keywords = [
+        # Normalize and lowercase text for robust matching
+        try:
+            import unicodedata
+            t = unicodedata.normalize("NFKC", text or "").lower()
+        except Exception:
+            t = (text or "").lower()
+
+        english_keywords = [
             # general
             "agriculture", "agricultural", "farming", "farm", "farmer", "field", "kerala",
             # crops and operations
@@ -88,43 +96,87 @@ async def chat_endpoint(payload: ChatRequest):
             "cardamom", "rubber", "tea", "coffee", "cashew", "tapioca", "tomato",
             "vegetable", "vegetables",
         ]
-        return any(k in t for k in keywords)
+
+        mal_keywords = [
+            # general
+            "കൃഷി", "കർഷകൻ", "വയൽ", "കേരളം",
+            # crops and operations
+            "വിള", "വിളകൾ", "മണ്ണ്", "വിത്ത്", "വിത്തിടൽ", "ജലസേചനം",
+            "വാരി", "വാരിപ്പ്", "വളം", "ജൈവവളം", "കമ്പോസ്റ്റ്",
+            "മൾച്ച്", "കീടം", "കീടനിയന്ത്രണം", "രോഗം", "ഫംഗിസൈഡ്", "കുറ്റിവെട്ടൽ",
+            "ഉൽപ്പാദനം", "ഇടവിട്ട്", "തൈ", "മുളച്ചുവരവ്",
+            # weather/region
+            "മൺസൂൺ", "മഴ", "ഈർപ്പം", "താപനില", "കാലാവസ്ഥ",
+            # common Kerala crops (Malayalam)
+            "നെല്ല്", "അരി", "തേങ്ങ", "വാഴ", "കുരുമുളക്", "ഏലക്ക",
+            "റബ്ബർ", "ചായ", "കാപ്പി", "കശുവണ്ടി", "കപ്പ", "തക്കാളി",
+            "പച്ചക്കറി", "പച്ചക്കറികൾ",
+        ]
+
+        def contains_any(haystack: str, needles: list[str]) -> bool:
+            return any(n in haystack for n in needles)
+
+        return contains_any(t, english_keywords) or contains_any(t, mal_keywords)
 
     if not is_agriculture_query(payload.message):
-        warn = (
+        warn_en = (
             "This assistant is only for agricultural purposes. "
             "Please ask farming-related questions (e.g., crops, soil, weather, pest management)."
         )
-        return ChatResponse(reply=warn)
+        warn_ml = (
+            "ഈ അസിസ്റ്റന്റ് കാർഷിക ആവശ്യങ്ങൾക്ക് മാത്രമാണ്. "
+            "ദയവായി കൃഷിയുമായി ബന്ധപ്പെട്ട ചോദ്യങ്ങൾ ചോദിക്കുക (ഉദാ: വിളകൾ, മണ്ണ്, കാലാവസ്ഥ, കീടനിയന്ത്രണം)."
+        )
+        return ChatResponse(reply_ml=warn_ml, reply_en=warn_en)
 
     try:
-        # Lazy import to avoid import-time errors if not installed
         from groq import Groq
-
         client = Groq(api_key=api_key)
 
-        system_prompt = (
+        # Malayalam system prompt
+        system_prompt_ml = (
             "You are Krishi Mitra, a helpful AI assistant focused on Kerala agriculture. "
-            "Provide practical, concise, and actionable guidance about crops, weather, soil, and pest management. "
-            "If unsure, ask clarifying questions. Keep responses user-friendly. "
-            "Respond in Markdown using short sections (bold labels) and bullet lists when helpful."
+            "Respond in Malayalam (Malayalam script). Be concise and practical. "
+            "If relevant, use short bullet points."
         )
-
-        completion = client.chat.completions.create(
+        completion_ml = client.chat.completions.create(
             model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": system_prompt_ml},
                 {"role": "user", "content": payload.message},
             ],
             temperature=float(os.getenv("GROQ_TEMPERATURE", "0.3")),
             max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "512")),
         )
+        reply_ml = completion_ml.choices[0].message.content if completion_ml.choices else ""
 
-        reply = completion.choices[0].message.content if completion.choices else ""
-        if not reply:
+        # Detect if the query is in Malayalam (basic check: presence of Malayalam Unicode block)
+        is_malayalam = any('\u0d00' <= c <= '\u0d7f' for c in payload.message)
+
+        if is_malayalam:
+            reply_en = ""
+        else:
+            # English system prompt
+            system_prompt_en = (
+                "You are Krishi Mitra, a helpful AI assistant focused on Kerala agriculture. "
+                "Respond in English. Be concise and practical. "
+                "If relevant, use short bullet points."
+            )
+            completion_en = client.chat.completions.create(
+                model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+                messages=[
+                    {"role": "system", "content": system_prompt_en},
+                    {"role": "user", "content": payload.message},
+                ],
+                temperature=float(os.getenv("GROQ_TEMPERATURE", "0.3")),
+                max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "512")),
+            )
+            reply_en = completion_en.choices[0].message.content if completion_en.choices else ""
+
+        if not reply_ml and not reply_en:
             raise HTTPException(status_code=502, detail="Empty response from model")
 
-        return ChatResponse(reply=reply)
+        return ChatResponse(reply_ml=reply_ml, reply_en=reply_en)
     except HTTPException:
         raise
     except Exception as e:
@@ -149,7 +201,6 @@ async def voice_demo_endpoint(
         raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured on server")
 
     try:
-        from groq import Groq
         client = Groq(api_key=api_key)
 
         # Always use the same question for both calls
