@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi import File, UploadFile, Form
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,12 +42,17 @@ app.add_middleware(
 )
 
 
+
 class ChatRequest(BaseModel):
     message: str
 
-
 class ChatResponse(BaseModel):
     reply: str
+
+
+class VoiceDemoResponse(BaseModel):
+    reply_ml: str
+    reply_en: str
 
 
 @app.get("/")
@@ -124,6 +130,72 @@ async def chat_endpoint(payload: ChatRequest):
     except Exception as e:
         # Hide internal error details from client but log for server
         # In production, integrate proper logging here
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to generate response") from e
+
+
+@app.post("/api/voice-demo", response_model=VoiceDemoResponse)
+async def voice_demo_endpoint(
+    prompt: str = Form(...),
+    audio: UploadFile = File(None)
+):
+    """
+    Accepts a prompt and (optionally) an audio file. Ignores audio for now.
+    Returns both Malayalam and English responses from Groq.
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured on server")
+
+    try:
+        from groq import Groq
+        client = Groq(api_key=api_key)
+
+        # Always use the same question for both calls
+        question = "suggest best crops for red soil"
+
+        # Malayalam response
+        system_prompt_ml = (
+            "You are Krishi Mitra, a helpful AI assistant focused on Kerala agriculture. "
+            "Respond in Malayalam (Malayalam script). Be concise and practical. "
+            "If relevant, use short bullet points."
+        )
+        completion_ml = client.chat.completions.create(
+            model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+            messages=[
+                {"role": "system", "content": system_prompt_ml},
+                {"role": "user", "content": question},
+            ],
+            temperature=float(os.getenv("GROQ_TEMPERATURE", "0.3")),
+            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "512")),
+        )
+        reply_ml = completion_ml.choices[0].message.content if completion_ml.choices else ""
+
+        # English response
+        system_prompt_en = (
+            "You are Krishi Mitra, a helpful AI assistant focused on Kerala agriculture. "
+            "Respond in English. Be concise and practical. "
+            "If relevant, use short bullet points."
+        )
+        completion_en = client.chat.completions.create(
+            model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+            messages=[
+                {"role": "system", "content": system_prompt_en},
+                {"role": "user", "content": question},
+            ],
+            temperature=float(os.getenv("GROQ_TEMPERATURE", "0.3")),
+            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "512")),
+        )
+        reply_en = completion_en.choices[0].message.content if completion_en.choices else ""
+
+        if not reply_ml and not reply_en:
+            raise HTTPException(status_code=502, detail="Empty response from model")
+
+        return VoiceDemoResponse(reply_ml=reply_ml, reply_en=reply_en)
+    except HTTPException:
+        raise
+    except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to generate response") from e

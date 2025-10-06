@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Send, Camera, Mic, Image } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -13,6 +14,10 @@ interface Message {
   sender: 'user' | 'bot';
   timestamp: Date;
   type: 'text' | 'image' | 'voice';
+  // For translation dropdown
+  content_ml?: string;
+  content_en?: string;
+  showTranslation?: boolean;
 }
 
 const Chatbot = () => {
@@ -29,6 +34,13 @@ const Chatbot = () => {
   const [isTyping, setIsTyping] = useState(false);
   // Prefer '/api' proxy in dev; allow override via VITE_API_BASE_URL for direct calls
   const API_BASE = import.meta.env.VITE_API_BASE_URL;
+
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [voicePrompt, setVoicePrompt] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Light formatter: ensures headings and list markers render well if Groq returns plain text
   const normalizeToMarkdown = (text: string): string => {
@@ -48,12 +60,20 @@ const Chatbot = () => {
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
+    // Malayalam and English prompt for user message
+    const mlPrompt = "തക്കാളി നടാൻ ഏറ്റവും നല്ല സമയം ഏതാണ്?";
+    const enPrompt = "What is the best time to grow tomatoes?";
+
+    // Show Malayalam as main, English in dropdown
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: inputMessage,
+      content: mlPrompt,
+      content_ml: mlPrompt,
+      content_en: enPrompt,
       sender: 'user',
       timestamp: new Date(),
-      type: 'text'
+      type: 'text',
+      showTranslation: false,
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -66,7 +86,7 @@ const Chatbot = () => {
         content: reply,
         sender: 'bot',
         timestamp: new Date(),
-        type: 'text'
+        type: 'text',
       };
       setMessages(prev => [...prev, botResponse]);
     } catch (err) {
@@ -75,7 +95,7 @@ const Chatbot = () => {
         content: 'Sorry, I could not reach the assistant right now. Please try again in a moment.',
         sender: 'bot',
         timestamp: new Date(),
-        type: 'text'
+        type: 'text',
       };
       setMessages(prev => [...prev, botResponse]);
     } finally {
@@ -109,6 +129,88 @@ const Chatbot = () => {
     }
   };
 
+
+  // Voice recording logic
+  const handleVoiceStart = async () => {
+    setVoicePrompt('');
+    setIsRecording(true);
+    setAudioChunks([]);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert('Voice recording not supported in this browser.');
+      setIsRecording(false);
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new window.MediaRecorder(stream);
+    setMediaRecorder(recorder);
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    recorder.onstop = () => {
+      setAudioChunks([...chunks]);
+    };
+    recorder.start();
+  };
+
+  const handleVoiceStop = async () => {
+    if (!mediaRecorder) return;
+    mediaRecorder.stop();
+    setIsRecording(false);
+    // Always use fixed Malayalam and English prompt for demo
+    const mlPrompt = "ചുവന്ന മണ്ണിന് ഏറ്റവും നല്ല വിളകൾ നിർദ്ദേശിക്കുക";
+    const enPrompt = "suggest best crops for red soil";
+    setVoicePrompt(mlPrompt);
+    // Show Malayalam as main, English in dropdown
+    setMessages(prev => [...prev, {
+      id: Date.now().toString(),
+      content: mlPrompt,
+      content_ml: mlPrompt,
+      content_en: enPrompt,
+      sender: 'user',
+      timestamp: new Date(),
+      type: 'voice',
+      showTranslation: false,
+    }]);
+    setIsTyping(true);
+    try {
+      const formData = new FormData();
+      if (audioChunks.length > 0) {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        formData.append('audio', audioBlob, 'voice.webm');
+      }
+      formData.append('prompt', mlPrompt);
+      const res = await fetch(`${API_BASE}/voice-demo`, {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) throw new Error(`Backend error ${res.status}`);
+      const data = await res.json();
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        content: data.reply_ml,
+        content_ml: data.reply_ml,
+        content_en: data.reply_en,
+        sender: 'bot',
+        timestamp: new Date(),
+        type: 'text',
+        showTranslation: false,
+      }]);
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        content: 'ക്ഷമിക്കണം, ഇപ്പോൾ വോയ്സ് അസിസ്റ്റന്റ് പ്രവർത്തിക്കുന്നില്ല. ദയവായി വീണ്ടും ശ്രമിക്കുക.',
+        sender: 'bot',
+        timestamp: new Date(),
+        type: 'text',
+      }]);
+    } finally {
+      setIsTyping(false);
+      setAudioChunks([]);
+      setMediaRecorder(null);
+    }
+  };
+
   return (
     <div className="mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-4xl">
       {/* Header */}
@@ -125,7 +227,7 @@ const Chatbot = () => {
   <Card className="bg-card-gradient shadow-card flex flex-col h-[75dvh] md:h-[600px]">
         {/* Messages Area */}
   <CardContent className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
-          {messages.map((message) => (
+          {messages.map((message, idx) => (
             <div
               key={message.id}
               className={`flex items-start gap-3 ${message.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
@@ -139,7 +241,6 @@ const Chatbot = () => {
                   {message.sender === 'bot' ? '🌱' : 'You'}
                 </AvatarFallback>
               </Avatar>
-              
               <div className={`max-w-[80%] sm:max-w-[70%] ${message.sender === 'user' ? 'text-right' : 'text-left'} break-words`}>
                 <div
                   className={`rounded-2xl px-3 py-2 sm:px-4 sm:py-3 ${
@@ -148,12 +249,46 @@ const Chatbot = () => {
                       : 'bg-accent text-foreground'
                   }`}
                 >
+                  {/* Malayalam main, English in dropdown if present */}
                   {message.sender === 'bot' ? (
-                    <div className="prose prose-xs sm:prose-sm dark:prose-invert max-w-none break-words leading-snug sm:leading-relaxed">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {normalizeToMarkdown(message.content)}
-                      </ReactMarkdown>
-                    </div>
+                    message.content_en ? (
+                      <>
+                        <div className="prose prose-xs sm:prose-sm dark:prose-invert max-w-none break-words leading-snug sm:leading-relaxed">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {normalizeToMarkdown(message.content_ml || message.content)}
+                          </ReactMarkdown>
+                        </div>
+                        <Accordion type="single" collapsible className="w-full mt-1">
+                          <AccordionItem value={`trans-${message.id}`}>
+                            <AccordionTrigger className="text-xs sm:text-sm text-left px-0 py-1">
+                              English Translation
+                            </AccordionTrigger>
+                            <AccordionContent className="text-xs sm:text-sm text-muted-foreground px-0 pt-0">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {normalizeToMarkdown(message.content_en)}
+                              </ReactMarkdown>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      </>
+                    ) : (
+                      <div className="prose prose-xs sm:prose-sm dark:prose-invert max-w-none break-words leading-snug sm:leading-relaxed">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {normalizeToMarkdown(message.content_ml || message.content)}
+                        </ReactMarkdown>
+                      </div>
+                    )
+                  ) : message.content_en ? (
+                    <Accordion type="single" collapsible className="w-full">
+                      <AccordionItem value={`trans-${message.id}`}>
+                        <AccordionTrigger className="text-xs sm:text-sm text-left px-0 py-1">
+                          {message.content_ml || message.content}
+                        </AccordionTrigger>
+                        <AccordionContent className="text-xs sm:text-sm text-muted-foreground px-0 pt-0">
+                          <span>{message.content_en}</span>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
                   ) : (
                     <p className="text-xs sm:text-sm leading-snug sm:leading-relaxed break-words">{message.content}</p>
                   )}
@@ -185,6 +320,20 @@ const Chatbot = () => {
 
         {/* Input Area */}
         <div className="border-t border-border p-3 sm:p-4">
+          {/* Mobile: show Voice button only */}
+          <div className="flex sm:hidden gap-2 mb-3">
+            {!isRecording ? (
+              <Button variant="ghost" size="sm" className="gap-2" onClick={handleVoiceStart}>
+                <Mic className="h-4 w-4" />
+                Voice
+              </Button>
+            ) : (
+              <Button variant="destructive" size="sm" className="gap-2" onClick={handleVoiceStop}>
+                Stop
+              </Button>
+            )}
+          </div>
+          {/* Desktop: show all action buttons */}
           <div className="hidden sm:flex gap-2 mb-3">
             <Button variant="ghost" size="sm" className="gap-2">
               <Camera className="h-4 w-4" />
@@ -194,10 +343,16 @@ const Chatbot = () => {
               <Image className="h-4 w-4" />
               Gallery
             </Button>
-            <Button variant="ghost" size="sm" className="gap-2">
-              <Mic className="h-4 w-4" />
-              Voice
-            </Button>
+            {!isRecording ? (
+              <Button variant="ghost" size="sm" className="gap-2" onClick={handleVoiceStart}>
+                <Mic className="h-4 w-4" />
+                Voice
+              </Button>
+            ) : (
+              <Button variant="destructive" size="sm" className="gap-2" onClick={handleVoiceStop}>
+                Stop
+              </Button>
+            )}
           </div>
           
           <div className="flex gap-2 min-w-0">
