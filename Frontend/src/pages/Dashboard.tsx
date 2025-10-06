@@ -318,14 +318,6 @@ const Dashboard = () => {
         <h1 className="text-xl font-semibold">
           🌱 Welcome, {username} / സ്വാഗതം, {username}
         </h1>
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="h-9 w-9">
-            <Bell className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
-            <UserCircle className="h-6 w-6" />
-          </Button>
-        </div>
       </div>
       {/* Welcome Quote */}
       <div className="text-center space-y-4">

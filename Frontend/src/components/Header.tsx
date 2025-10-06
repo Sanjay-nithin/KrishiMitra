@@ -12,7 +12,7 @@ const Header = () => {
         <div className="flex items-center gap-3">
           <span className="text-2xl">🌱</span>
           <div>
-            <h1 className="text-lg font-semibold text-primary">Welcome, Farmer</h1>
+            <h1 className="text-lg font-semibold text-primary">KrishiMitra.AI</h1>
             <p className="text-sm text-muted-foreground">Let's grow together</p>
           </div>
         </div>
