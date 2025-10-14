@@ -24,18 +24,6 @@ Mango – red soil-il perfect aanu, Kerala-yil very popular fruit.
 Banana – ithum red soil-il nalla aayi cultivate cheyyam, if properly managed.
 
 So overall paranjaal, red soil Kerala-yil nalla fertile aanu, but water um nutrients um correct aayi manage cheythaal best results kittum.`;
-  // Speech synthesis for Malayalam and English
-  const speakMalayalam = () => {
-    const utter = new window.SpeechSynthesisUtterance(MALAYALAM_SAMPLE);
-    utter.lang = 'ml-IN';
-    window.speechSynthesis.speak(utter);
-  };
-
-  const speakEnglish = (text: string) => {
-    const utter = new window.SpeechSynthesisUtterance(text);
-    utter.lang = 'en-US';
-    window.speechSynthesis.speak(utter);
-  };
 import { Send, Camera, Mic, Image } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,6 +59,9 @@ const Chatbot = () => {
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  // TTS state
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const utterRef = useRef<SpeechSynthesisUtterance | null>(null);
   // Prefer '/api' proxy in dev; allow override via VITE_API_BASE_URL for direct calls
   const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -80,6 +71,37 @@ const Chatbot = () => {
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [voicePrompt, setVoicePrompt] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // ----- Text To Speech helpers -----
+  const stopSpeaking = () => {
+    try {
+      window.speechSynthesis.cancel();
+    } finally {
+      utterRef.current = null;
+      setSpeakingId(null);
+    }
+  };
+
+  const speakText = (messageKey: string, text: string, lang: 'ml' | 'en') => {
+    if (!text) return;
+    // Cancel any ongoing speech to avoid queueing/repeats
+    window.speechSynthesis.cancel();
+    // Create new utterance
+    const utter = new window.SpeechSynthesisUtterance(lang === 'ml' ? MALAYALAM_SAMPLE : text);
+    utter.lang = lang === 'ml' ? 'ml-IN' : 'en-US';
+    utter.rate = 1; // Adjust if needed
+    utter.onend = () => {
+      utterRef.current = null;
+      setSpeakingId((prev) => (prev === messageKey ? null : prev));
+    };
+    utter.onerror = () => {
+      utterRef.current = null;
+      setSpeakingId((prev) => (prev === messageKey ? null : prev));
+    };
+    utterRef.current = utter;
+    setSpeakingId(messageKey);
+    window.speechSynthesis.speak(utter);
+  };
 
   // Light formatter: ensures headings and list markers render well if Groq returns plain text
   const normalizeToMarkdown = (text: string): string => {
@@ -291,9 +313,15 @@ const Chatbot = () => {
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {normalizeToMarkdown(message.content_ml || message.content)}
                           </ReactMarkdown>
-                          <Button size="sm" variant="secondary" className="ml-2 mt-1" onClick={speakMalayalam}>
-                            Read
-                          </Button>
+                          {speakingId === `${message.id}-ml` ? (
+                            <Button size="sm" variant="destructive" className="ml-2 mt-1" onClick={stopSpeaking}>
+                              Stop
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="secondary" className="ml-2 mt-1" onClick={() => speakText(`${message.id}-ml`, message.content_ml || message.content, 'ml')}>
+                              Read
+                            </Button>
+                          )}
                         </div>
                         <Accordion type="single" collapsible className="w-full mt-1">
                           <AccordionItem value={`trans-${message.id}`}>
@@ -304,9 +332,15 @@ const Chatbot = () => {
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                 {normalizeToMarkdown(message.content_en)}
                               </ReactMarkdown>
-                              <Button size="sm" variant="secondary" className="ml-2 mt-1" onClick={() => speakEnglish(message.content_en || '')}>
-                                Read
-                              </Button>
+                              {speakingId === `${message.id}-en` ? (
+                                <Button size="sm" variant="destructive" className="ml-2 mt-1" onClick={stopSpeaking}>
+                                  Stop
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="secondary" className="ml-2 mt-1" onClick={() => speakText(`${message.id}-en`, message.content_en || '', 'en')}>
+                                  Read
+                                </Button>
+                              )}
                             </AccordionContent>
                           </AccordionItem>
                         </Accordion>
@@ -316,9 +350,15 @@ const Chatbot = () => {
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {normalizeToMarkdown(message.content_ml || message.content)}
                         </ReactMarkdown>
-                        <Button size="sm" variant="secondary" className="ml-2 mt-1" onClick={speakMalayalam}>
-                          Read
-                        </Button>
+                        {speakingId === `${message.id}-ml` ? (
+                          <Button size="sm" variant="destructive" className="ml-2 mt-1" onClick={stopSpeaking}>
+                            Stop
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="secondary" className="ml-2 mt-1" onClick={() => speakText(`${message.id}-ml`, message.content_ml || message.content, 'ml')}>
+                            Read
+                          </Button>
+                        )}
                       </div>
                     )
                   ) : message.content_en ? (
