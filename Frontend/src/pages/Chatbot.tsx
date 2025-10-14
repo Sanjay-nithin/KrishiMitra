@@ -1,4 +1,41 @@
 import { useState, useRef } from "react";
+// Hardcoded sample for TTS (Malayalam + English mix)
+const MALAYALAM_SAMPLE = `
+In Kerala alle, red soil aanu very common. Ithu oru special type of soil aanu, so correct crop choose cheyyanam. Okay, nokkaam best crops for red soil.
+
+ Grains section:
+Rice – ithu nalla grow aavum red soil-il, especially low-lying areas-il.
+Maize – proper irrigation um seed management um koduthaal, ithu kittum nalla yield.
+Sorghum – athu oru drought-tolerant crop aanu, even rain kuravayalum red soil-il nannayi grow cheyyum.
+
+ Pulses:
+Red gram (toor dal) – nalla suitable aanu, Kerala-yil popular aayittulla pulse aanu.
+Black gram (urad dal) – ithum grow aavum, but care kodukkanam.
+Green gram (moong dal) – ithu nalla grow aavum, especially high altitude areas-il.
+
+Vegetables:
+Chillies – Kerala-yil popular aanu, red soil-il super aayi grow cheyyum.
+Tomato – proper attention koduthaal nalla yield kittum.
+Cucumber – ithu red soil-il good aanu, especially low areas-il.
+Okra (ladies' finger) – upland red soil-il nannayi grow cheyyum.
+
+ Fruits:
+Mango – red soil-il perfect aanu, Kerala-yil very popular fruit.
+Banana – ithum red soil-il nalla aayi cultivate cheyyam, if properly managed.
+
+So overall paranjaal, red soil Kerala-yil nalla fertile aanu, but water um nutrients um correct aayi manage cheythaal best results kittum.`;
+  // Speech synthesis for Malayalam and English
+  const speakMalayalam = () => {
+    const utter = new window.SpeechSynthesisUtterance(MALAYALAM_SAMPLE);
+    utter.lang = 'ml-IN';
+    window.speechSynthesis.speak(utter);
+  };
+
+  const speakEnglish = (text: string) => {
+    const utter = new window.SpeechSynthesisUtterance(text);
+    utter.lang = 'en-US';
+    window.speechSynthesis.speak(utter);
+  };
 import { Send, Camera, Mic, Image } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -250,29 +287,38 @@ const Chatbot = () => {
                   {message.sender === 'bot' ? (
                     message.content_en ? (
                       <>
-                        <div className="prose prose-xs sm:prose-sm dark:prose-invert max-w-none break-words leading-snug sm:leading-relaxed">
+                        <div className="prose prose-xs sm:prose-sm dark:prose-invert max-w-none break-words leading-snug sm:leading-relaxed flex items-start gap-2">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {normalizeToMarkdown(message.content_ml || message.content)}
                           </ReactMarkdown>
+                          <Button size="sm" variant="secondary" className="ml-2 mt-1" onClick={speakMalayalam}>
+                            Read
+                          </Button>
                         </div>
                         <Accordion type="single" collapsible className="w-full mt-1">
                           <AccordionItem value={`trans-${message.id}`}>
                             <AccordionTrigger className="text-xs sm:text-sm text-left px-0 py-1">
                               English Translation
                             </AccordionTrigger>
-                            <AccordionContent className="text-xs sm:text-sm text-muted-foreground px-0 pt-0">
+                            <AccordionContent className="text-xs sm:text-sm text-muted-foreground px-0 pt-0 flex items-start gap-2">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                 {normalizeToMarkdown(message.content_en)}
                               </ReactMarkdown>
+                              <Button size="sm" variant="secondary" className="ml-2 mt-1" onClick={() => speakEnglish(message.content_en || '')}>
+                                Read
+                              </Button>
                             </AccordionContent>
                           </AccordionItem>
                         </Accordion>
                       </>
                     ) : (
-                      <div className="prose prose-xs sm:prose-sm dark:prose-invert max-w-none break-words leading-snug sm:leading-relaxed">
+                      <div className="prose prose-xs sm:prose-sm dark:prose-invert max-w-none break-words leading-snug sm:leading-relaxed flex items-start gap-2">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {normalizeToMarkdown(message.content_ml || message.content)}
                         </ReactMarkdown>
+                        <Button size="sm" variant="secondary" className="ml-2 mt-1" onClick={speakMalayalam}>
+                          Read
+                        </Button>
                       </div>
                     )
                   ) : message.content_en ? (
