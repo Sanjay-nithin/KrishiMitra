@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 // Hardcoded sample for TTS (Malayalam + English mix)
 const MALAYALAM_SAMPLE = `
 In Kerala alle, red soil aanu very common. Ithu oru special type of soil aanu, so correct crop choose cheyyanam. Okay, nokkaam best crops for red soil.
@@ -62,6 +62,8 @@ const Chatbot = () => {
   // TTS state
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const utterRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [femaleVoice, setFemaleVoice] = useState<SpeechSynthesisVoice | null>(null);
   // Prefer '/api' proxy in dev; allow override via VITE_API_BASE_URL for direct calls
   const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -71,6 +73,74 @@ const Chatbot = () => {
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [voicePrompt, setVoicePrompt] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Load available voices on component mount
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      setAvailableVoices(voices);
+      
+      // Find the best female voice
+      const findFemaleVoice = () => {
+        // Priority list of known female voices
+        const femaleVoiceNames = [
+          'Microsoft Zira Desktop', 'Microsoft Zira', 'Zira',
+          'Google US English Female', 'Google UK English Female',
+          'Samantha', 'Karen', 'Moira', 'Catherine', 'Susan',
+          'Microsoft Hazel Desktop', 'Microsoft Hazel',
+          'Alex (Premium)', 'Ava (Premium)', 'Emma (Premium)',
+          'Google हिन्दी Female', 'Google मराठी Female'
+        ];
+        
+        // First, try exact matches with known female voices
+        for (const name of femaleVoiceNames) {
+          const voice = voices.find(v => v.name === name);
+          if (voice) {
+            console.log('Selected female voice:', voice.name);
+            return voice;
+          }
+        }
+        
+        // Then try partial matches for female indicators
+        const femaleKeywords = ['female', 'woman', 'zira', 'samantha', 'karen', 'moira', 'catherine', 'susan', 'hazel', 'ava', 'emma'];
+        for (const keyword of femaleKeywords) {
+          const voice = voices.find(v => v.name.toLowerCase().includes(keyword));
+          if (voice) {
+            console.log('Selected female voice (keyword match):', voice.name);
+            return voice;
+          }
+        }
+        
+        // Fallback to any English voice (preferably not male)
+        const englishVoice = voices.find(v => 
+          v.lang.includes('en') && 
+          !v.name.toLowerCase().includes('male') &&
+          !v.name.toLowerCase().includes('david') &&
+          !v.name.toLowerCase().includes('daniel')
+        );
+        
+        if (englishVoice) {
+          console.log('Selected fallback voice:', englishVoice.name);
+          return englishVoice;
+        }
+        
+        console.log('No suitable female voice found, using default');
+        return null;
+      };
+      
+      setFemaleVoice(findFemaleVoice());
+    };
+    
+    // Load voices immediately
+    loadVoices();
+    
+    // Also listen for voiceschanged event (some browsers load voices asynchronously)
+    window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+    
+    return () => {
+      window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
+    };
+  }, []);
 
   // ----- Text To Speech helpers -----
   const stopSpeaking = () => {
@@ -86,10 +156,24 @@ const Chatbot = () => {
     if (!text) return;
     // Cancel any ongoing speech to avoid queueing/repeats
     window.speechSynthesis.cancel();
+    
     // Create new utterance
     const utter = new window.SpeechSynthesisUtterance(lang === 'ml' ? MALAYALAM_SAMPLE : text);
     utter.lang = lang === 'ml' ? 'ml-IN' : 'en-US';
-    utter.rate = 1; // Adjust if needed
+    
+    // Enhanced voice settings for louder, faster, clearer speech
+    utter.rate = 1; // Slightly faster than normal
+    utter.pitch = 1.2; // Higher pitch for more feminine sound
+    utter.volume = 1.0; // Maximum volume
+    
+    // Use the pre-selected female voice
+    if (femaleVoice) {
+      utter.voice = femaleVoice;
+      console.log('Using female voice:', femaleVoice.name);
+    } else {
+      console.log('No female voice available, using system default');
+    }
+    
     utter.onend = () => {
       utterRef.current = null;
       setSpeakingId((prev) => (prev === messageKey ? null : prev));
